@@ -43,8 +43,6 @@ function GetModelViewProjection( projectionMatrix, translationX, translationY, t
 }
 
 
-// [TO-DO] Complete the implementation of the following class.
-
 class MeshDrawer
 {
 	// The constructor is a good place for taking care of the necessary initializations.
@@ -53,9 +51,13 @@ class MeshDrawer
 		this.prog = InitShaderProgram(meshVS, meshFS)
 		this.mvp = gl.getUniformLocation( this.prog, 'mvp' )
 		this.vertPos = gl.getAttribLocation( this.prog, 'pos' )
-		this.texCoord = gl.getAttribLocation(this.prog, 'texCoord');
+		this.texCoord = gl.getAttribLocation(this.prog, 'texCoord')
+		this.useTexture = gl.getUniformLocation(this.prog, 'useTexture')
+		this.sampler = gl.getUniformLocation(this.prog, 'sampler')
+		this.changeYZ = gl.getUniformLocation(this.prog, "changeYZ")
 		this.vertBuffer = gl.createBuffer()
 		this.texBuffer = gl.createBuffer()
+		this.texture = gl.createTexture() 
 	}
 	
 
@@ -72,22 +74,24 @@ class MeshDrawer
 	// Note that this method can be called multiple times.
 	setMesh( vertPos, texCoords )
 	{
-		// [TO-DO] Update the contents of the vertex buffer objects.
+		gl.useProgram( this.prog )
+		gl.bindBuffer( gl.ARRAY_BUFFER, this.vertBuffer )
+		gl.bufferData( gl.ARRAY_BUFFER, new Float32Array(vertPos), gl.STATIC_DRAW )
 
-		this.numTriangles = vertPos.length / 3;
+		gl.bindBuffer( gl.ARRAY_BUFFER, this.texBuffer )
+		gl.bufferData( gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW )
+		this.numTriangles = vertPos.length / 3
 	}
 	
-
-
 
 	// This method is called when the user changes the state of the
 	// "Swap Y-Z Axes" checkbox. 
 	// The argument is a boolean that indicates if the checkbox is checked.
 	swapYZ( swap )
 	{
-		// [TO-DO] Set the uniform parameter(s) of the vertex shader
+		gl.useProgram(this.prog)
+		gl.uniform1i(this.changeYZ, swap)
 	}
-	
 	
 	
 	// This method is called to draw the triangular mesh.
@@ -95,7 +99,19 @@ class MeshDrawer
 	// by the GetModelViewProjection function above.
 	draw( trans )
 	{
-			gl.drawArrays(gl.TRIANGLES, 0, this.numTriangles);
+		gl.useProgram( this.prog )
+
+		gl.uniformMatrix4fv( this.mvp, false, trans )
+
+		gl.bindBuffer( gl.ARRAY_BUFFER, this.vertBuffer )
+		gl.vertexAttribPointer( this.pos, 3, gl.FLOAT, false, 0, 0 )
+		gl.enableVertexAttribArray( this.pos )
+
+		gl.bindBuffer( gl.ARRAY_BUFFER, this.texBuffer )
+		gl.vertexAttribPointer( this.texCoord, 2, gl.FLOAT, false, 0, 0 )
+		gl.enableVertexAttribArray( this.texCoord )
+
+		gl.drawArrays(gl.TRIANGLES, 0, this.numTriangles)
 	}
 	
 
@@ -105,13 +121,19 @@ class MeshDrawer
 	// The argument is an HTML IMG element containing the texture data.
 	setTexture( img )
 	{
-		// [TO-DO] Bind the texture
 
-		// You can set the texture image data using the following command.
-		gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img );
+		gl.useProgram( this.prog )
+		gl.activeTexture(gl.TEXTURE0)
+		gl.bindTexture( gl.TEXTURE_2D, this.texture )
+		gl.texImage2D( gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img )
+		gl.generateMipmap( gl.TEXTURE_2D )
+		gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR )
+		gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR )
+		gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT )
+		gl.texParameteri( gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT )
+		gl.uniform1i(this.sampler, 0)
+		gl.uniform1i(this.useTexture, true)
 
-		// [TO-DO] Now that we have a texture, it might be a good idea to set
-		// some uniform parameter(s) of the fragment shader, so that it uses the texture.
 	}
 	
 
@@ -122,24 +144,31 @@ class MeshDrawer
 	// The argument is a boolean that indicates if the checkbox is checked.
 	showTexture( show )
 	{
-		// [TO-DO] set the uniform parameter(s) of the fragment shader to specify if it should use the texture.
-	}
-	
+		gl.useProgram(this.prog)
+		gl.uniform1i(this.useTexture, show)
+    }
 }
 
-// Vertex shader source code
+
 var meshVS = `
 	attribute vec3 pos;
 	attribute vec2 texCoord; 
 	varying vec2 vTexCoord;
 	uniform mat4 mvp;
+	uniform bool changeYZ;
 	void main()
 	{
+		vec4 vec = vec4(pos, 1.0);
+		if(changeYZ)
+		{
+		vec = vec4(vec.x, vec.z, vec.y, vec.w);
+		}
 		vTexCoord = texCoord;
-		gl_Position = mvp * vec4(pos, 1.0);
+		gl_Position = mvp * vec;
 	}
 `;
-// Fragment shader source code
+
+
 var meshFS = `
 	precision mediump float;
 	uniform sampler2D sampler;
@@ -150,7 +179,7 @@ var meshFS = `
 		 if (useTexture) {
         	gl_FragColor = texture2D(sampler, vTexCoord);
     	} else {
-        	gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+        	gl_FragColor = vec4(0, 0, 0.5, 1.0);
     	}
 	}
 `;
